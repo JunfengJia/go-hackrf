@@ -36,39 +36,46 @@ func (e ErrUnknown) Error() string {
 
 // Init must be called once at the start of the program.
 func Init() error {
-	return toError(C.hackrf_init())
+	return toError(nil, C.hackrf_init())
 }
 
 // Exit should be called once at the end of the program.
 func Exit() error {
-	return toError(C.hackrf_exit())
+	return toError(nil, C.hackrf_exit())
 }
 
-func toError(r C.int) error {
+func toError(d *Device, r C.int) error {
 	if r == C.HACKRF_SUCCESS {
 		return nil
 	}
+	var err error
 	switch r {
 	case C.HACKRF_ERROR_INVALID_PARAM:
-		return ErrInvalidParam
+		err = ErrInvalidParam
 	case C.HACKRF_ERROR_NOT_FOUND:
-		return ErrNotFound
+		err = ErrNotFound
 	case C.HACKRF_ERROR_BUSY:
-		return ErrBusy
+		err = ErrBusy
 	case C.HACKRF_ERROR_NO_MEM:
-		return ErrNoMem
+		err = ErrNoMem
 	case C.HACKRF_ERROR_LIBUSB:
-		return ErrLibUSB
+		err = ErrLibUSB
 	case C.HACKRF_ERROR_THREAD:
-		return ErrThread
+		err = ErrThread
 	case C.HACKRF_ERROR_STREAMING_THREAD_ERR:
-		return ErrStreamingThreadErr
+		err = ErrStreamingThreadErr
 	case C.HACKRF_ERROR_STREAMING_STOPPED:
-		return ErrStreamingStopped
+		err = ErrStreamingStopped
 	case C.HACKRF_ERROR_STREAMING_EXIT_CALLED:
-		return ErrStreamingExitCalled
+		err = ErrStreamingExitCalled
 	case C.HACKRF_ERROR_OTHER:
-		return ErrOther
+		err = ErrOther
+	default:
+		err = ErrUnknown(int(r))
 	}
-	return ErrUnknown(int(r))
+	if d != nil {
+		d.err = err
+	}
+
+	return err
 }

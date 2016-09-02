@@ -18,6 +18,7 @@ var (
 type Device struct {
 	cdev      *C.hackrf_device
 	callbacks []int
+	err       error
 }
 
 type Callback func(buf []byte) error
@@ -58,53 +59,72 @@ func cbGo(transfer *C.hackrf_transfer, tx C.int) C.int {
 func Open() (*Device, error) {
 	var d Device
 	if r := C.hackrf_open(&d.cdev); r != C.HACKRF_SUCCESS {
-		return nil, toError(r)
+		return nil, toError(nil, r)
 	}
 	return &d, nil
 }
 
 func (d *Device) Close() error {
-	e := toError(C.hackrf_close(d.cdev))
+	if d.err != nil {
+		return d.err
+	}
+	e := toError(d, C.hackrf_close(d.cdev))
 	if e == nil {
 		d.cdev = nil
 	}
+	d.err = e
 	return e
 }
 
 func (d *Device) Version() (string, error) {
+	if d.err != nil {
+		return "", d.err
+	}
 	ver := (*C.char)(C.malloc(128))
 	defer C.free(unsafe.Pointer(ver))
 	if r := C.hackrf_version_string_read(d.cdev, ver, 128); r != C.HACKRF_SUCCESS {
-		return "", toError(r)
+		return "", toError(d, r)
 	}
 	return C.GoString(ver), nil
 }
 
 // StartRX starts sampling sending the IQ samples to the callback.
 func (d *Device) StartRX(cb Callback) error {
+	if d.err != nil {
+		return d.err
+	}
 	cbIx := d.registerCallback(&callbackContext{
 		cb:  cb,
 		tx:  false,
 		dev: d,
 	})
-	return toError(C.hackrf_start_rx(d.cdev, (*[0]byte)(unsafe.Pointer(C.rxCBPtr)), unsafe.Pointer(uintptr(cbIx))))
+	return toError(d, C.hackrf_start_rx(d.cdev, (*[0]byte)(unsafe.Pointer(C.rxCBPtr)), unsafe.Pointer(uintptr(cbIx))))
 }
 
 func (d *Device) StopRX() error {
-	return toError(C.hackrf_stop_rx(d.cdev))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_stop_rx(d.cdev))
 }
 
 func (d *Device) StartTX(cb Callback) error {
+	if d.err != nil {
+		return d.err
+	}
 	cbIx := d.registerCallback(&callbackContext{
 		cb:  cb,
 		tx:  true,
 		dev: d,
 	})
-	return toError(C.hackrf_start_tx(d.cdev, (*[0]byte)(unsafe.Pointer(C.rxCBPtr)), unsafe.Pointer(uintptr(cbIx))))
+	return toError(d, C.hackrf_start_tx(d.cdev, (*[0]byte)(unsafe.Pointer(C.rxCBPtr)), unsafe.Pointer(uintptr(cbIx))))
 }
 
 func (d *Device) StopTX() error {
-	return toError(C.hackrf_stop_tx(d.cdev))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_stop_tx(d.cdev))
 }
 
 func (d *Device) registerCallback(ctx *callbackContext) int {
@@ -127,7 +147,10 @@ func (d *Device) registerCallback(ctx *callbackContext) int {
 }
 
 func (d *Device) SetFreq(freqHz uint64) error {
-	return toError(C.hackrf_set_freq(d.cdev, C.uint64_t(freqHz)))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_set_freq(d.cdev, C.uint64_t(freqHz)))
 }
 
 // extern ADDAPI int ADDCALL hackrf_set_freq_explicit(hackrf_device* device,
@@ -137,54 +160,78 @@ func (d *Device) SetFreq(freqHz uint64) error {
 // SetSampleRateManual sets the sample rate in hz.
 // Preferred rates are 8, 10, 12.5, 16, 20MHz due to less jitter.
 func (d *Device) SetSampleRateManual(freqHz, divider int) error {
-	return toError(C.hackrf_set_sample_rate_manual(d.cdev, C.uint32_t(freqHz), C.uint32_t(divider)))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_set_sample_rate_manual(d.cdev, C.uint32_t(freqHz), C.uint32_t(divider)))
 }
 
 // SetSampleRate sets the sample rate in hz.
 // Preferred rates are 8, 10, 12.5, 16, 20MHz due to less jitter.
 func (d *Device) SetSampleRate(freqHz float64) error {
-	return toError(C.hackrf_set_sample_rate(d.cdev, C.double(freqHz)))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_set_sample_rate(d.cdev, C.double(freqHz)))
 }
 
 // SetBasebandFilterBandwidth sets the baseband bandwidth.
 // Possible values are 1.75/2.5/3.5/5/5.5/6/7/8/9/10/12/14/15/20/24/28MHz.
 func (d *Device) SetBasebandFilterBandwidth(hz int) error {
-	return toError(C.hackrf_set_baseband_filter_bandwidth(d.cdev, C.uint32_t(hz)))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_set_baseband_filter_bandwidth(d.cdev, C.uint32_t(hz)))
 }
 
 // SetAmpEnable enables or disables the external RX/TX RF amplifier.
 func (d *Device) SetAmpEnable(value bool) error {
+	if d.err != nil {
+		return d.err
+	}
 	var v C.uint8_t
 	if value {
 		v = 1
 	}
-	return toError(C.hackrf_set_amp_enable(d.cdev, v))
+	return toError(d, C.hackrf_set_amp_enable(d.cdev, v))
 }
 
 // SetLNAGain sets the gain for the RX low-noise amplifier (IF).
 // Range 0-40 step 8db
 func (d *Device) SetLNAGain(value int) error {
-	return toError(C.hackrf_set_lna_gain(d.cdev, C.uint32_t(value)))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_set_lna_gain(d.cdev, C.uint32_t(value)))
 }
 
 // SetVGAGain sets the gain for the RX variable gain amplifier (baseband).
 // Range 0-62 step 2db
 func (d *Device) SetVGAGain(value int) error {
-	return toError(C.hackrf_set_vga_gain(d.cdev, C.uint32_t(value)))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_set_vga_gain(d.cdev, C.uint32_t(value)))
 }
 
 // SetTXVGAGain sets the gain for the TX variable gain amplifier (IF).
 // Range 0-47 step 1db
 func (d *Device) SetTXVGAGain(value int) error {
-	return toError(C.hackrf_set_txvga_gain(d.cdev, C.uint32_t(value)))
+	if d.err != nil {
+		return d.err
+	}
+	return toError(d, C.hackrf_set_txvga_gain(d.cdev, C.uint32_t(value)))
 }
 
 func (d *Device) SetAntennaEnable(enabled bool) error {
+	if d.err != nil {
+		return d.err
+	}
 	var value C.uint8_t
 	if enabled {
 		value = 1
 	}
-	return toError(C.hackrf_set_antenna_enable(d.cdev, C.uint8_t(value)))
+	return toError(d, C.hackrf_set_antenna_enable(d.cdev, C.uint8_t(value)))
 }
 
 // ComputeBasebandFilterBWRoundDownLT computse the nearest freq for bw filter
